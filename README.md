@@ -12,6 +12,8 @@ Generative AI tools were used as a **supporting assistant** while building this 
 
 **Important:** We did most of our work **pair programming on David’s computer**. Because of that, **Git commit history shows David as the author**, even though **both teammates were actively involved for essentially the whole time**. Parthiv’s contributions are reflected in the work itself (UI flow, architecture, integration pieces), not as separate commits under his GitHub account.
 
+For a **structured live demo outline** (talking points, flow, ~3–4 minutes), see **`PRESENTATION.md`**.
+
 ---
 
 Course: CS501E · Project update milestone
