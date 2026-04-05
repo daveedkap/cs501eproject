@@ -6,7 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,7 +46,7 @@ private data class TabSpec(
 
 private val tabs = listOf(
     TabSpec(PulsifyDestinations.HOME, "Home", Icons.Default.Home),
-    TabSpec(PulsifyDestinations.SESSIONS, "Sessions", Icons.Default.List),
+    TabSpec(PulsifyDestinations.SESSIONS, "Sessions", Icons.AutoMirrored.Filled.List),
     TabSpec(PulsifyDestinations.MAP, "Map", Icons.Default.Map),
     TabSpec(PulsifyDestinations.SETTINGS, "Settings", Icons.Default.Settings),
 )
