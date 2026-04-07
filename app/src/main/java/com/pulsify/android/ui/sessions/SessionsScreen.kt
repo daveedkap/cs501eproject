@@ -49,17 +49,17 @@ fun SessionsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        items(sessions, key = { it.id }) { session ->
+        items(sessions, key = { "session_${it.id}" }) { session ->
             SessionCard(session)
         }
-        item {
+        item(key = "rules_header") {
             Text(
                 text = "Learned associations (stub)",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
-        items(rules, key = { it.id }) { rule ->
+        items(rules, key = { "rule_${it.id}" }) { rule ->
             RuleCard(rule)
         }
         if (sessions.isEmpty()) {

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +72,8 @@ fun HomeScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val textMode by viewModel.textModePreferred.collectAsStateWithLifecycle()
     val draft by viewModel.userDraft.collectAsStateWithLifecycle()
+    val isListening by viewModel.isListening.collectAsStateWithLifecycle()
+    val partialText by viewModel.partialText.collectAsStateWithLifecycle()
 
     var locationGranted by remember {
         mutableStateOf(
@@ -80,12 +85,33 @@ fun HomeScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> locationGranted = granted }
 
+    var audioGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        audioGranted = granted
+        if (granted) viewModel.toggleListening()
+    }
+
     val hero = @Composable {
         HeroPanel(
             activityLabel = detected.displayLabel(),
             loading = loading,
             textMode = textMode,
-            onMicTap = { viewModel.simulateVoicePrompt() },
+            isListening = isListening,
+            partialText = partialText,
+            onMicTap = {
+                if (!audioGranted) {
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                } else {
+                    viewModel.toggleListening()
+                }
+            },
             onSuggestPlaylist = {
                 if (!locationGranted) {
                     permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -144,9 +170,17 @@ private fun HeroPanel(
     activityLabel: String,
     loading: Boolean,
     textMode: Boolean,
+    isListening: Boolean,
+    partialText: String,
     onMicTap: () -> Unit,
     onSuggestPlaylist: () -> Unit,
 ) {
+    val micTint by animateColorAsState(
+        targetValue = if (isListening) MaterialTheme.colorScheme.error
+        else MaterialTheme.colorScheme.primary,
+        label = "micTint",
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -158,30 +192,42 @@ private fun HeroPanel(
         ) {
             AssistChip(onClick = {}, label = { Text("Context: $activityLabel") })
             Text(
-                text = if (textMode) "Text mode" else "Voice-first mode (simulated)",
+                text = if (textMode) "Text mode" else "Voice mode",
                 style = MaterialTheme.typography.titleMedium,
             )
             Surface(
                 onClick = onMicTap,
                 shape = CircleShape,
-                tonalElevation = 4.dp,
+                tonalElevation = if (isListening) 8.dp else 4.dp,
+                color = if (isListening) MaterialTheme.colorScheme.errorContainer
+                else MaterialTheme.colorScheme.surface,
                 modifier = Modifier
                     .size(120.dp)
-                    .semantics { contentDescription = "Simulate assistant voice prompt" },
+                    .semantics {
+                        contentDescription = if (isListening) "Stop listening" else "Start voice input"
+                    },
             ) {
                 BoxWithCenter {
                     Icon(
-                        imageVector = Icons.Default.Mic,
+                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                         contentDescription = null,
                         modifier = Modifier.size(56.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = micTint,
                     )
                 }
             }
             Text(
-                text = "Large tap target for motion contexts. Mic triggers a canned assistant line.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = when {
+                    isListening && partialText.isNotBlank() -> "\"$partialText\""
+                    isListening -> "Listening…"
+                    else -> "Tap the mic to speak"
+                },
+                style = if (isListening && partialText.isNotBlank())
+                    MaterialTheme.typography.bodyLarge
+                else MaterialTheme.typography.bodyMedium,
+                color = if (isListening) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
             FilledTonalButton(
                 onClick = onSuggestPlaylist,
@@ -199,7 +245,7 @@ private fun HeroPanel(
                         )
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text("Generate contextual mix (mock AI + Spotify)")
+                    Text("Generate contextual mix")
                 }
             }
         }

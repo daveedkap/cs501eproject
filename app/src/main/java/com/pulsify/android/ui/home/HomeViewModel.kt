@@ -1,10 +1,15 @@
 package com.pulsify.android.ui.home
 
 import android.app.Application
+import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pulsify.android.data.location.LocationReader
@@ -36,8 +41,16 @@ class HomeViewModel(
     private val _userDraft = MutableStateFlow("")
     val userDraft: StateFlow<String> = _userDraft.asStateFlow()
 
+    private val _isListening = MutableStateFlow(false)
+    val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
+
+    private val _partialText = MutableStateFlow("")
+    val partialText: StateFlow<String> = _partialText.asStateFlow()
+
     val messages = repository.messages
     val textModePreferred = repository.textModePreferred
+
+    private var speechRecognizer: SpeechRecognizer? = null
 
     init {
         accelerometer?.let {
@@ -47,15 +60,14 @@ class HomeViewModel(
 
     override fun onCleared() {
         sensorManager.unregisterListener(this)
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         super.onCleared()
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
-        val ax = event.values[0]
-        val ay = event.values[1]
-        val az = event.values[2]
-        _detectedActivity.value = classifier.update(ax, ay, az)
+        _detectedActivity.value = classifier.update(event.values[0], event.values[1], event.values[2])
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -71,15 +83,106 @@ class HomeViewModel(
         _userDraft.value = ""
     }
 
-    fun simulateVoicePrompt() {
-        val activity = _detectedActivity.value
-        val suggestion = when (activity) {
-            DetectedActivity.Running -> "It looks like you’re moving fast—want your usual high-energy mix or something new?"
-            DetectedActivity.Walking -> "Nice walk—want a mid-tempo indie playlist or a calm commute mix?"
-            DetectedActivity.Sitting -> "You seem settled—replay your focus playlist or try fresh instrumentals?"
-            DetectedActivity.Unknown -> "Still sensing your context—want a balanced playlist while I keep listening?"
+    fun toggleListening() {
+        if (_isListening.value) {
+            stopListening()
+        } else {
+            startListening()
         }
-        repository.appendMessage(suggestion, isUser = false)
+    }
+
+    private fun startListening() {
+        val app = getApplication<Application>()
+        if (!SpeechRecognizer.isRecognitionAvailable(app)) {
+            repository.appendMessage(
+                "Speech recognition is not available on this device.",
+                isUser = false,
+            )
+            return
+        }
+
+        speechRecognizer?.destroy()
+        _partialText.value = ""
+
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(app).apply {
+            setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    _isListening.value = true
+                }
+
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+
+                override fun onEndOfSpeech() {
+                    _isListening.value = false
+                }
+
+                override fun onError(error: Int) {
+                    _isListening.value = false
+                    _partialText.value = ""
+                    val msg = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH -> "Didn't catch that—try again."
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected—tap the mic to try again."
+                        SpeechRecognizer.ERROR_AUDIO -> "Audio error—check microphone permission."
+                        else -> null
+                    }
+                    msg?.let { repository.appendMessage(it, isUser = false) }
+                }
+
+                override fun onResults(results: Bundle?) {
+                    _isListening.value = false
+                    _partialText.value = ""
+                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    val text = matches?.firstOrNull()?.trim()
+                    if (!text.isNullOrEmpty()) {
+                        repository.appendMessage(text, isUser = true)
+                        respondToVoiceInput(text)
+                    }
+                }
+
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partial = partialResults
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                    if (!partial.isNullOrBlank()) {
+                        _partialText.value = partial
+                    }
+                }
+
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        speechRecognizer?.startListening(intent)
+        _isListening.value = true
+    }
+
+    private fun stopListening() {
+        speechRecognizer?.stopListening()
+        _isListening.value = false
+        _partialText.value = ""
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun respondToVoiceInput(userText: String) {
+        val activity = _detectedActivity.value
+        val response = when (activity) {
+            DetectedActivity.Running ->
+                "Got it — you're running. I'll queue up a high-energy mix."
+            DetectedActivity.Walking ->
+                "Nice walk! I'll find something mid-tempo for you."
+            DetectedActivity.Sitting ->
+                "Looks like you're relaxing — how about some focus-friendly tracks?"
+            DetectedActivity.Unknown ->
+                "Still reading your context — I'll pick a balanced playlist."
+        }
+        repository.appendMessage(response, isUser = false)
     }
 
     fun requestPlaylist(onDone: () -> Unit) {
