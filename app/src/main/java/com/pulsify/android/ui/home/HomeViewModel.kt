@@ -81,6 +81,35 @@ class HomeViewModel(
         if (text.isEmpty()) return
         repository.appendMessage(text, isUser = true)
         _userDraft.value = ""
+        respondToTextInput(text)
+    }
+
+    private fun respondToTextInput(userText: String) {
+        val activity = _detectedActivity.value
+        val lower = userText.lowercase()
+        val response = when {
+            lower.contains("playlist") || lower.contains("music") || lower.contains("play") ->
+                "Tap 'Generate contextual mix' and I'll build one based on your ${activity.displayLabel().lowercase()} context."
+            lower.contains("run") || lower.contains("jog") || lower.contains("workout") ->
+                "Sounds like you want something high-energy! Hit generate and I'll match tracks to your pace."
+            lower.contains("relax") || lower.contains("chill") || lower.contains("calm") || lower.contains("study") ->
+                "Got it — I'll lean toward lo-fi and ambient when you generate a mix."
+            lower.contains("walk") || lower.contains("commute") ->
+                "A nice mid-tempo indie mix could work. Generate a mix and I'll match it to your stride."
+            lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
+                "Hey! I'm reading your movement as ${activity.displayLabel().lowercase()}. Want me to suggest some music?"
+            else -> when (activity) {
+                DetectedActivity.Running ->
+                    "You're on the move! Tap generate for a high-BPM mix that matches your pace."
+                DetectedActivity.Walking ->
+                    "Nice and easy — I can put together a mid-tempo playlist. Tap generate when you're ready."
+                DetectedActivity.Sitting ->
+                    "Looks like downtime. I'd suggest some focus or lo-fi tracks — tap generate to try it."
+                DetectedActivity.Unknown ->
+                    "I'm still figuring out your context. Tap generate and I'll pick something balanced."
+            }
+        }
+        repository.appendMessage(response, isUser = false)
     }
 
     fun toggleListening() {
