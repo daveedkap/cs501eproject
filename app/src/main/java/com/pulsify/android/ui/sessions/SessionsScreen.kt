@@ -3,7 +3,9 @@ package com.pulsify.android.ui.sessions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,11 +42,11 @@ fun SessionsScreen(
     ) {
         item {
             Text(
-                text = "Saved sessions",
+                text = "Session history",
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                text = "Room persists lightweight session rows for grading and future personalization.",
+                text = "Each generated mix is saved locally so Pulsify can learn your preferences over time.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -54,9 +56,14 @@ fun SessionsScreen(
         }
         item(key = "rules_header") {
             Text(
-                text = "Learned associations (stub)",
+                text = "Learned preferences",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                text = "Pulsify remembers what music fits each activity so suggestions improve over time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         items(rules, key = { "rule_${it.id}" }) { rule ->
@@ -76,16 +83,31 @@ fun SessionsScreen(
 @Composable
 private fun SessionCard(session: ActivitySessionEntity) {
     val df = rememberDateFormat()
+    val activityLabel = when (session.activityType) {
+        "Running" -> "Running"
+        "Walking" -> "Walking"
+        "Sitting" -> "Sitting / studying"
+        else -> session.activityType
+    }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(df.format(Date(session.timestampMillis)), style = MaterialTheme.typography.labelLarge)
-            Text(session.activityType, style = MaterialTheme.typography.titleMedium)
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(activityLabel, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    df.format(Date(session.timestampMillis)),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             session.playlistSummary?.let {
-                Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             }
             if (session.latitude != null && session.longitude != null) {
                 Text(
-                    "Tagged @ ${"%.4f".format(session.latitude)}, ${"%.4f".format(session.longitude)}",
+                    "Location: ${"%.4f".format(session.latitude)}, ${"%.4f".format(session.longitude)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -96,11 +118,21 @@ private fun SessionCard(session: ActivitySessionEntity) {
 
 @Composable
 private fun RuleCard(rule: ContextMusicRuleEntity) {
-    Card {
+    val activityEmoji = when (rule.activityType) {
+        "Running" -> "Running"
+        "Walking" -> "Walking"
+        "Sitting" -> "Sitting / studying"
+        else -> rule.activityType
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(rule.activityType, style = MaterialTheme.typography.titleMedium)
+            Text(activityEmoji, style = MaterialTheme.typography.titleMedium)
             Text(rule.associationNote, style = MaterialTheme.typography.bodyMedium)
-            Text("Uses recorded: ${rule.useCount}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "Used ${rule.useCount} ${if (rule.useCount == 1) "time" else "times"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+            )
         }
     }
 }

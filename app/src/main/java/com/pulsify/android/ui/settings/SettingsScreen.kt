@@ -61,17 +61,6 @@ fun SettingsScreen(
             contentDescription = "Prefer text mode",
         )
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Accessibility", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Motion-friendly layout: large mic target, high-contrast chips, and optional text entry. " +
-                        "We will add TalkBack polish and font scaling checks next milestone.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-
         TextButton(
             onClick = { viewModel.resetChat() },
             modifier = Modifier.semantics { contentDescription = "Clear assistant thread" },

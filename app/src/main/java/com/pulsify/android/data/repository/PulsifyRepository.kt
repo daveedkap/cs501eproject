@@ -100,7 +100,9 @@ class PulsifyRepository(
             tracks = tracks,
         )
 
-        val summary = "${tracks.size} tracks · ${activity.displayLabel()}"
+        val avgBpm = tracks.map { it.bpm }.average().toInt()
+        val moods = tracks.map { it.energyLabel }.distinct().take(3).joinToString(", ")
+        val summary = "${tracks.size} tracks · ${activity.displayLabel()} · ~${avgBpm} BPM avg · $moods"
         val sessionId = dao.insertSession(
             ActivitySessionEntity(
                 timestampMillis = System.currentTimeMillis(),
@@ -112,10 +114,11 @@ class PulsifyRepository(
             ),
         )
 
+        val associationLabel = buildAssociationLabel(activity, tracks)
         dao.upsertRule(
             ContextMusicRuleEntity(
                 activityType = activity.name,
-                associationNote = userPrompt?.take(120) ?: "Default contextual mix",
+                associationNote = associationLabel,
                 useCount = 1,
             ),
         )
@@ -168,6 +171,17 @@ class PulsifyRepository(
         userPrompt?.let { append("User note: $it. ") }
         if (lat != null && lng != null) append("Approx location: $lat,$lng. ")
         append("Return a 10-song playlist idea with tempo and energy matched to the activity.")
+    }
+
+    private fun buildAssociationLabel(activity: DetectedActivity, tracks: List<Track>): String {
+        val avgBpm = tracks.map { it.bpm }.average().toInt()
+        val topMoods = tracks.map { it.energyLabel }.distinct().shuffled().take(2).joinToString(" / ")
+        return when (activity) {
+            DetectedActivity.Running -> "High-energy, $topMoods — avg $avgBpm BPM for runs"
+            DetectedActivity.Walking -> "Mid-tempo, $topMoods — avg $avgBpm BPM for walks"
+            DetectedActivity.Sitting -> "Lo-fi & calm, $topMoods — avg $avgBpm BPM for focus"
+            DetectedActivity.Unknown -> "Mixed mood, $topMoods — avg $avgBpm BPM"
+        }
     }
 
     private fun mockTracksFor(activity: DetectedActivity): List<Track> {
