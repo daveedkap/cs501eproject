@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,98 +70,105 @@ fun MapScreen(
         if (granted) viewModel.refreshLocation()
     }
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Your music map", style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = "See where you've listened. Each session tagged with location shows up as a pin.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        item(key = "header") {
+            Text("Your music map", style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = "See where you've listened. Each session tagged with location shows up as a pin.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         if (!granted) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Location permission needed", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Grant fine location to see your sessions on the map and tag future ones with place context.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Button(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) {
-                        Text("Grant location permission")
+            item(key = "permission") {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Location permission needed", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Grant fine location to see your sessions on the map and tag future ones with place context.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) {
+                            Text("Grant location permission")
+                        }
                     }
                 }
             }
         } else {
-            val center = ui.latLng
-                ?: sessionMarkers.firstOrNull()?.latLng
-                ?: LatLng(42.3505, -71.1054)
+            item(key = "map") {
+                val center = ui.latLng
+                    ?: sessionMarkers.firstOrNull()?.latLng
+                    ?: LatLng(42.3505, -71.1054)
 
-            SessionMap(
-                center = center,
-                currentLocation = ui.latLng,
-                markers = sessionMarkers,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(360.dp),
-            )
+                SessionMap(
+                    center = center,
+                    currentLocation = ui.latLng,
+                    markers = sessionMarkers,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp),
+                )
+            }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(
-                    onClick = { viewModel.refreshLocation() },
-                    enabled = !ui.isRefreshing,
+            item(key = "controls") {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text(if (ui.isRefreshing) "Refreshing…" else "Refresh location")
-                }
-                ui.latLng?.let { latLng ->
-                    Text(
-                        "${"%.4f".format(latLng.latitude)}, ${"%.4f".format(latLng.longitude)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Button(
+                        onClick = { viewModel.refreshLocation() },
+                        enabled = !ui.isRefreshing,
+                    ) {
+                        Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(if (ui.isRefreshing) "Refreshing…" else "Refresh location")
+                    }
+                    ui.latLng?.let { latLng ->
+                        Text(
+                            "${"%.4f".format(latLng.latitude)}, ${"%.4f".format(latLng.longitude)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
 
-        ui.lastError?.let {
-            Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        ui.lastError?.let { error ->
+            item(key = "error") {
+                Text(text = error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
         }
 
         if (sessionMarkers.isNotEmpty()) {
-            Text(
-                "Sessions on the map (${sessionMarkers.size})",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(sessionMarkers, key = { it.timestampMillis }) { marker ->
-                    SessionMarkerCard(marker)
-                }
+            item(key = "sessions_header") {
+                Text(
+                    "Sessions on the map (${sessionMarkers.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            items(sessionMarkers, key = { "marker_${it.timestampMillis}" }) { marker ->
+                SessionMarkerCard(marker)
             }
         } else if (granted) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("No location-tagged sessions yet", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Go to Home and generate a mix with location permission granted. " +
-                            "The session will appear here as a pin on the map.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            item(key = "empty") {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("No location-tagged sessions yet", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Go to Home and generate a mix with location permission granted. " +
+                                "The session will appear here as a pin on the map.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
