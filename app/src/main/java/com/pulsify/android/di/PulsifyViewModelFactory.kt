@@ -32,6 +32,7 @@ class PulsifyViewModelFactory(
 
             modelClass.isAssignableFrom(MapViewModel::class.java) -> MapViewModel(
                 c.locationReader,
+                c.repository,
             ) as T
 
             modelClass.isAssignableFrom(SettingsViewModel::class.java) -> SettingsViewModel(

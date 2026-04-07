@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
@@ -43,6 +43,8 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun MapScreen(
@@ -51,6 +53,7 @@ fun MapScreen(
 ) {
     val context = LocalContext.current
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val sessionMarkers by viewModel.sessionMarkers.collectAsStateWithLifecycle()
 
     var granted by remember {
         mutableStateOf(
@@ -69,14 +72,12 @@ fun MapScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Your location", style = MaterialTheme.typography.titleLarge)
+        Text("Your music map", style = MaterialTheme.typography.titleLarge)
         Text(
-            text = "Pulsify uses your location to add context to each listening session — " +
-                "a jog in the park and a walk across campus are different vibes.",
+            text = "See where you've listened. Each session tagged with location shows up as a pin.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -84,13 +85,9 @@ fun MapScreen(
         if (!granted) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Location permission needed", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Location permission needed",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        "Grant fine location so sessions can be tagged with where you were. " +
-                            "You can deny this — the app still works, just without place context.",
+                        "Grant fine location to see your sessions on the map and tag future ones with place context.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Button(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) {
@@ -99,63 +96,106 @@ fun MapScreen(
                 }
             }
         } else {
-            ui.latLng?.let { latLng ->
-                LocationInfoCard(latLng)
-                MapPreview(
-                    latLng = latLng,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(360.dp),
-                )
-            }
+            val center = ui.latLng
+                ?: sessionMarkers.firstOrNull()?.latLng
+                ?: LatLng(42.3505, -71.1054)
 
-            Button(
-                onClick = { viewModel.refreshLocation() },
-                enabled = !ui.isRefreshing,
-            ) {
-                Icon(
-                    Icons.Default.MyLocation,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.size(8.dp))
-                Text(if (ui.isRefreshing) "Refreshing…" else "Refresh location")
-            }
-        }
-
-        ui.lastError?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
+            SessionMap(
+                center = center,
+                currentLocation = ui.latLng,
+                markers = sessionMarkers,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(360.dp),
             )
-        }
 
-        if (granted && ui.latLng == null && ui.lastError == null && !ui.isRefreshing) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { viewModel.refreshLocation() },
+                    enabled = !ui.isRefreshing,
+                ) {
+                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(if (ui.isRefreshing) "Refreshing…" else "Refresh location")
+                }
+                ui.latLng?.let { latLng ->
                     Text(
-                        "Waiting for a GPS fix…",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        "On an emulator, open Extended Controls (⋯) → Location and set a mock location, then tap Refresh.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "${"%.4f".format(latLng.latitude)}, ${"%.4f".format(latLng.longitude)}",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("How Pulsify uses location", style = MaterialTheme.typography.titleMedium)
+        ui.lastError?.let {
+            Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        if (sessionMarkers.isNotEmpty()) {
+            Text(
+                "Sessions on the map (${sessionMarkers.size})",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(sessionMarkers, key = { it.timestampMillis }) { marker ->
+                    SessionMarkerCard(marker)
+                }
+            }
+        } else if (granted) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("No location-tagged sessions yet", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Go to Home and generate a mix with location permission granted. " +
+                            "The session will appear here as a pin on the map.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionMarkerCard(marker: SessionMarker) {
+    val df = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
+    val activityLabel = when (marker.activityType) {
+        "Running" -> "Running"
+        "Walking" -> "Walking"
+        "Sitting" -> "Sitting / studying"
+        else -> marker.activityType
+    }
+    Card {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(activityLabel, style = MaterialTheme.typography.titleMedium)
+                Text(marker.summary, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 Text(
-                    "Each session you generate can be tagged with your approximate coordinates. " +
-                        "Over time this helps Pulsify learn patterns — for example, you might prefer " +
-                        "high-energy tracks at the gym and calm lo-fi at the library. " +
-                        "Location data stays on-device and is never sent to a server in this build.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    df.format(Date(marker.timestampMillis)),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -164,52 +204,42 @@ fun MapScreen(
 }
 
 @Composable
-private fun LocationInfoCard(latLng: LatLng) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                Icons.Default.LocationOn,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp),
-            )
-            Column {
-                Text(
-                    "Current location",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Text(
-                    "${"%.5f".format(latLng.latitude)}, ${"%.5f".format(latLng.longitude)}",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MapPreview(latLng: LatLng, modifier: Modifier = Modifier) {
+private fun SessionMap(
+    center: LatLng,
+    currentLocation: LatLng?,
+    markers: List<SessionMarker>,
+    modifier: Modifier = Modifier,
+) {
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(latLng, 14f)
+        position = CameraPosition.fromLatLngZoom(center, 13f)
     }
-    LaunchedEffect(latLng) {
-        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 14f))
+    LaunchedEffect(center) {
+        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(center, 13f))
     }
     Card(modifier = modifier, elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
         ) {
-            Marker(
-                state = MarkerState(position = latLng),
-                title = "You are here",
-            )
+            currentLocation?.let {
+                Marker(
+                    state = MarkerState(position = it),
+                    title = "You are here",
+                )
+            }
+            markers.forEach { session ->
+                val label = when (session.activityType) {
+                    "Running" -> "Running"
+                    "Walking" -> "Walking"
+                    "Sitting" -> "Studying / sitting"
+                    else -> session.activityType
+                }
+                Marker(
+                    state = MarkerState(position = session.latLng),
+                    title = label,
+                    snippet = session.summary,
+                )
+            }
         }
     }
 }
