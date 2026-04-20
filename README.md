@@ -1,6 +1,6 @@
 # Pulsify (CS501E project)
 
-**Pulsify** is an Android app (Jetpack Compose) that explores context-aware music companionship: movement hints from onboard sensors, optional location, conversational UI, and local persistence—with external music and cloud AI integrations stubbed for this milestone.
+**Pulsify** is an Android app (Jetpack Compose) that explores context-aware music companionship: the phone's accelerometer detects movement (sitting, walking, running), real Spotify integration pulls the user's listening history, and Google Gemini AI explains how the music fits the current activity context. Sessions are persisted locally with Room and optionally tagged with location data via Google Maps.
 
 ## Responsible use of AI (Course disclosure)
 

@@ -12,6 +12,8 @@ if (localFile.exists()) {
     localFile.inputStream().use { localProperties.load(it) }
 }
 val mapsApiKey = localProperties.getProperty("MAPS_API_KEY", "")
+val spotifyClientId = localProperties.getProperty("SPOTIFY_CLIENT_ID", "")
+val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "")
 
 android {
     namespace = "com.pulsify.android"
@@ -28,7 +30,9 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        buildConfigField("boolean", "USE_MOCK_APIS", "true")
+        buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClientId\"")
+        buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"com.pulsify.android://callback\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     buildTypes {
@@ -79,6 +83,7 @@ dependencies {
     implementation("androidx.compose.material3:material3-window-size-class")
 
     implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation("androidx.browser:browser:1.8.0")
 
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.9.0")

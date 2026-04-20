@@ -37,6 +37,7 @@ class PulsifyViewModelFactory(
 
             modelClass.isAssignableFrom(SettingsViewModel::class.java) -> SettingsViewModel(
                 c.repository,
+                c.spotifyAuthManager,
             ) as T
 
             modelClass.isAssignableFrom(PlaylistViewModel::class.java) -> PlaylistViewModel(

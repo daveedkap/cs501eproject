@@ -1,14 +1,14 @@
-# Pulsify — Project Update 1 demonstration outline
+# Pulsify — Project Update demonstration outline
 
 **Team:** David Kaplansky, Parthiv Krishnan · **Course:** CS501E  
 
-This document is our **planned structure** for the Project Update 1 walkthrough (approximately **3–4 minutes**). We will demonstrate the app **live** on a device or emulator.
+This document is our **planned structure** for the Project Update walkthrough (approximately **3–4 minutes**). We will demonstrate the app **live** on a device or emulator.
 
 ---
 
 ## Opening
 
-We will introduce **Pulsify** as a music companion that uses **movement context** from the phone to drive suggestions. For this milestone, **Spotify and cloud AI are intentionally stubbed**—Spotify’s access model and API setup are a poor fit for a short milestone, and we wanted a **working UI and data path** first. Our proposal describes the full vision; this build proves the **foundation**.
+We will introduce **Pulsify** as a context-aware music companion that reads **movement** from the phone's accelerometer and combines it with the user's **real Spotify library** and **Gemini AI** to suggest music that fits the moment.
 
 We will use hardware with an **accelerometer** (physical device or emulator). For the Map screen, **location** improves the story; on an emulator we can set a **mock location** if needed.
 
@@ -16,53 +16,57 @@ We will use hardware with an **accelerometer** (physical device or emulator). Fo
 
 ## 1. Home — context and conversation (~1 min)
 
-We will show the **Material 3** home experience: the **card**, the **activity chip** (sitting / walking / running) driven by the **accelerometer**, and **simple threshold-based** classification—not ML yet, which matches our scoped proposal.
+We will show the **Material 3** home experience: the **card**, the **activity chip** (sitting / walking / running) driven by the **accelerometer**, and **simple threshold-based** classification.
 
-We will **move the device** so the chip updates. We will tap the **large mic control** and explain that it **simulates** a voice prompt: we have **not** integrated speech-to-text yet, but the interaction pattern matches how we want the product to feel during motion. If **text mode** is enabled in Settings, we will note that it supports **quiet environments** (e.g. a library); otherwise we will mention that the toggle lives in Settings.
+We will **move the device** so the chip updates. We will tap the **mic control** to demonstrate **real voice-to-text** via Android's SpeechRecognizer — what the user says is displayed in the chat, and the bot responds contextually. We will also show **text mode** for quiet environments.
 
-**Planned wording:** *“We prioritized **large touch targets** and a **minimal** home screen so the app stays usable while someone is moving.”*
+**Planned wording:** *"We prioritized **large touch targets** and a **minimal** home screen so the app stays usable while someone is moving."*
 
 ---
 
-## 2. Generate mix → Playlist (~45 s)
+## 2. Spotify integration & generate mix (~45 s)
 
-We will tap **“Generate contextual mix (mock AI + Spotify).”** We will explain that **coroutines** and a short **delay** stand in for network latency, that **Retrofit** and DTOs are in place for a future Gemini path, and that **`USE_MOCK_APIS`** keeps everything **local** for now.
+We will show the **Settings** screen where we connect to **Spotify** via **OAuth PKCE** — the real authorization flow opens in a browser, the user signs in, and Pulsify receives an access token. We will show it says **"Connected as [name]"** after auth.
 
-On the **Playlist** screen we will use **play, pause, and skip** and clarify that state is **entirely local**—there is **no Spotify App Remote** or Web API playback in this build.
+We will tap **"Generate contextual mix."** Behind the scenes, Pulsify:
+1. Fetches the user's **top tracks** from the Spotify API
+2. Sends the track list plus the **detected activity** to **Gemini AI** (free tier)
+3. Gemini returns a **conversational explanation** of why the music fits
+4. The playlist screen shows **real tracks from Spotify**
 
-**Planned wording:** *“Playback is **simulated on purpose** so we could nail **state and navigation** before investing in OAuth and SDK constraints.”*
+**Planned wording:** *"We pull real data from Spotify and use Gemini to add intelligence — the AI explains how your music fits your current context."*
 
 ---
 
 ## 3. Sessions — persistence (~30 s)
 
-We will open **Sessions** from the bottom navigation and show the **Room**-backed list: **timestamps**, **detected activity**, and **optional coordinates** when location permission was granted.
+We will open **Sessions** from the bottom navigation and show the **Room**-backed list: **timestamps**, **detected activity**, **track count**, and **learned preferences** that the app builds over time.
 
-**Planned wording:** *“This is our early **persistence** layer: saved sessions plus placeholder rows for **context–music associations** we describe in the proposal.”*
+**Planned wording:** *"This is our **persistence** layer: saved sessions plus context–music associations that improve over time."*
 
 ---
 
 ## 4. Map — location (~30 s)
 
-On the **Map** tab we will request **fine location** if the system prompts us. We will show **coordinates** and the **map with a marker**. Our **Maps API key** lives in **`local.properties`** and is **not** committed to the repository.
+On the **Map** tab we will request **fine location** if the system prompts us. We will show **coordinates**, the **map with session markers**, and the session list below.
 
-**Planned wording:** *“Location supports the **context** story in our proposal; this screen shows **permissions** and **Maps Compose** wired end-to-end.”*
+**Planned wording:** *"Location adds another dimension of context — a jog in the park and a walk across campus are different vibes. Sessions are plotted on the map."*
 
 ---
 
 ## 5. Settings — UX and transparency (~30 s)
 
-We will briefly show **Simulate Spotify link** (UI-only), **text mode**, **clear assistant thread**, and the short **accessibility** note on the screen.
+We will briefly show **Spotify connect/disconnect**, **text mode**, and **clear assistant thread**.
 
-**Planned wording:** *“We tried to make it obvious what is **real** versus **stubbed**, so the milestone stays honest about scope.”*
+**Planned wording:** *"Settings keeps the user in control of their Spotify connection and chat preferences."*
 
 ---
 
 ## 6. Architecture (~30 s)
 
-We will summarize **navigation** (tabs plus a separate **playlist** destination), **ViewModels** per area, and a **repository** between the UI and **Room / remote-shaped** code.
+We will summarize **navigation** (tabs plus a separate **playlist** destination), **ViewModels** per area, and a **repository** that sits between the UI and **Room / Spotify / Gemini**.
 
-**Planned wording:** *“We structured the app in an **MVVM-style** way so the next step is largely **replacing mocks with real integrations** rather than rewriting the UI.”*
+**Planned wording:** *"We structured the app MVVM-style — the repository handles all API + DB logic, ViewModels expose state, and Compose renders it. Adding new features means extending the repository, not rewriting UI."*
 
 ---
 
@@ -70,10 +74,11 @@ We will summarize **navigation** (tabs plus a separate **playlist** destination)
 
 | Topic | Our response |
 |--------|----------------|
-| Why mock Spotify and Gemini? | **Access and auth complexity**, plus milestone time; we focused on **flow and architecture** first. |
-| Why Room this early? | **Sessions** and association stubs match the proposal’s **memory** direction. |
-| Why sensors? | **Movement context** is the main reason the product is **mobile-first**, not a desktop app. |
-| Why map and location? | **Place** enriches context; we are **not** claiming full mapping or routing features. |
+| How does Spotify work? | **PKCE OAuth** in a Custom Tab → access + refresh tokens → fetch top tracks and recently played via Retrofit. |
+| How does Gemini work? | **Free-tier Gemini 2.5 Flash-Lite** via Retrofit. We send activity + track list, get conversational reasoning back. |
+| What if APIs are down? | Graceful fallback: mock tracks if no Spotify, activity-based messages if no Gemini. |
+| Why Room? | **Sessions** and **learned preferences** persist on-device for cross-session learning. |
+| Why sensors + location? | **Movement** is the core context; **location** enriches it. Both are rubric items and proposal features. |
 
 ---
 
@@ -81,4 +86,4 @@ We will summarize **navigation** (tabs plus a separate **playlist** destination)
 
 We will end with a single summary line:
 
-*“In this update we deliver a **small vertical slice**: **sense** movement → **suggest** a mix → **show** tracks → **persist** a session → **tie** optional location on a map, with **clear stubs** where external services will plug in next.”*
+*"Pulsify senses your movement, pulls music from your Spotify library, and uses Gemini to explain the connection — all persisted locally so the app learns your preferences over time."*

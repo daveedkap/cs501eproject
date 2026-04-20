@@ -2,10 +2,6 @@ package com.pulsify.android.data.remote
 
 import com.squareup.moshi.Json
 
-/**
- * Request/response shapes for a future Gemini integration. Retrofit is wired; calls are not executed
- * while [com.pulsify.android.BuildConfig.USE_MOCK_APIS] is true.
- */
 data class GeminiContentPart(
     @Json(name = "text") val text: String,
 )

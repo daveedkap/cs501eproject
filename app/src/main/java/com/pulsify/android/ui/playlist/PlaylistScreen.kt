@@ -44,9 +44,9 @@ fun PlaylistScreen(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Now playing (simulated)", style = MaterialTheme.typography.titleLarge)
+        Text("Your contextual mix", style = MaterialTheme.typography.titleLarge)
         Text(
-            text = "Controls update local state only—Spotify App Remote arrives later.",
+            text = "Tracks selected based on your activity and Spotify listening history.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -107,7 +107,7 @@ private fun NowPlayingCard(track: Track, isPlaying: Boolean) {
             Text(track.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(track.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Text("${track.bpm} BPM · ${track.energyLabel}", style = MaterialTheme.typography.bodyMedium)
-            Text(if (isPlaying) "Simulated playback on" else "Paused (local only)", style = MaterialTheme.typography.labelLarge)
+            Text(if (isPlaying) "Playing" else "Paused", style = MaterialTheme.typography.labelLarge)
         }
     }
 }

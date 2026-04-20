@@ -2,12 +2,14 @@ package com.pulsify.android.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pulsify.android.data.remote.SpotifyAuthManager
 import com.pulsify.android.data.repository.PulsifyRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 
 class SettingsViewModel(
     private val repository: PulsifyRepository,
+    val spotifyAuthManager: SpotifyAuthManager,
 ) : ViewModel() {
 
     val spotifyLinked = repository.spotifyLinked.stateIn(
@@ -16,13 +18,21 @@ class SettingsViewModel(
         false,
     )
 
+    val spotifyDisplayName = spotifyAuthManager.displayName.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        null,
+    )
+
     val textModePreferred = repository.textModePreferred.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
         false,
     )
 
-    fun setSpotifyLinked(value: Boolean) = repository.setSpotifyLinked(value)
+    fun buildSpotifyAuthUrl(): String = spotifyAuthManager.buildAuthUrl()
+
+    fun disconnectSpotify() = spotifyAuthManager.logout()
 
     fun setTextMode(value: Boolean) = repository.setTextModePreferred(value)
 

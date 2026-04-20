@@ -8,24 +8,28 @@ import com.pulsify.android.data.remote.GeminiContent
 import com.pulsify.android.data.remote.GeminiContentPart
 import com.pulsify.android.data.remote.GeminiGenerateRequest
 import com.pulsify.android.data.remote.GeminiPlaylistService
+import com.pulsify.android.data.remote.SpotifyAuthManager
+import com.pulsify.android.data.remote.SpotifyTrackObject
+import com.pulsify.android.data.remote.SpotifyWebService
 import com.pulsify.android.domain.ChatMessage
 import com.pulsify.android.domain.DetectedActivity
 import com.pulsify.android.domain.PlaybackUiState
 import com.pulsify.android.domain.Track
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
-import kotlinx.coroutines.Dispatchers
 
 class PulsifyRepository(
     private val dao: PulsifyDao,
     private val geminiPlaylistService: GeminiPlaylistService,
+    private val spotifyWebService: SpotifyWebService,
+    private val spotifyAuthManager: SpotifyAuthManager,
 ) {
     val sessions = dao.observeSessions()
-
     val contextRules = dao.observeRules()
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(defaultWelcome())
@@ -36,15 +40,10 @@ class PulsifyRepository(
     )
     val playback: StateFlow<PlaybackUiState> = _playback.asStateFlow()
 
-    private val _spotifyLinked = MutableStateFlow(false)
-    val spotifyLinked: StateFlow<Boolean> = _spotifyLinked.asStateFlow()
+    val spotifyLinked: StateFlow<Boolean> = spotifyAuthManager.isAuthenticated
 
     private val _textModePreferred = MutableStateFlow(false)
     val textModePreferred = _textModePreferred.asStateFlow()
-
-    fun setSpotifyLinked(linked: Boolean) {
-        _spotifyLinked.value = linked
-    }
 
     fun setTextModePreferred(enabled: Boolean) {
         _textModePreferred.value = enabled
@@ -63,37 +62,25 @@ class PulsifyRepository(
         _messages.value = defaultWelcome()
     }
 
-    /**
-     * Simulates network + model latency, optionally exercises Retrofit types when mocks are disabled.
-     */
     suspend fun requestPlaylistForActivity(
         activity: DetectedActivity,
         userPrompt: String?,
         latitude: Double?,
         longitude: Double?,
     ): Long = withContext(Dispatchers.IO) {
-        if (!BuildConfig.USE_MOCK_APIS) {
-            runCatching {
-                geminiPlaylistService.generatePlaylistSuggestion(
-                    apiKey = "",
-                    body = GeminiGenerateRequest(
-                        contents = listOf(
-                            GeminiContent(
-                                parts = listOf(
-                                    GeminiContentPart(
-                                        text = buildPrompt(activity, userPrompt, latitude, longitude),
-                                    ),
-                                ),
-                                role = "user",
-                            ),
-                        ),
-                    ),
-                )
+        val spotifyTracks = fetchSpotifyTracks()
+        val tracks: List<Track>
+
+        if (spotifyTracks.isNotEmpty()) {
+            tracks = spotifyTracks.take(10).mapIndexed { i, st ->
+                st.toDomainTrack(activity, i)
             }
+            tryGeminiReasoning(activity, userPrompt, spotifyTracks)
+        } else {
+            tracks = mockTracksFor(activity)
+            tryGeminiGeneric(activity, userPrompt, latitude, longitude)
         }
 
-        delay(900L)
-        val tracks = mockTracksFor(activity)
         _playback.value = PlaybackUiState(
             isPlaying = false,
             currentIndex = 0,
@@ -103,6 +90,7 @@ class PulsifyRepository(
         val avgBpm = tracks.map { it.bpm }.average().toInt()
         val moods = tracks.map { it.energyLabel }.distinct().take(3).joinToString(", ")
         val summary = "${tracks.size} tracks · ${activity.displayLabel()} · ~${avgBpm} BPM avg · $moods"
+
         val sessionId = dao.insertSession(
             ActivitySessionEntity(
                 timestampMillis = System.currentTimeMillis(),
@@ -114,22 +102,143 @@ class PulsifyRepository(
             ),
         )
 
-        val associationLabel = buildAssociationLabel(activity, tracks)
         dao.upsertRule(
             ContextMusicRuleEntity(
                 activityType = activity.name,
-                associationNote = associationLabel,
+                associationNote = buildAssociationLabel(activity, tracks),
                 useCount = 1,
             ),
         )
 
-        appendMessage(
-            "Here is a ${tracks.size}-track mix tuned for ${activity.displayLabel().lowercase()}. " +
-                "Playback is simulated until Spotify is linked.",
-            isUser = false,
-        )
+        if (spotifyTracks.isEmpty()) {
+            appendMessage(
+                "Here's a ${tracks.size}-track mix tuned for ${activity.displayLabel().lowercase()}. " +
+                    "Connect Spotify in Settings for real music from your library!",
+                isUser = false,
+            )
+        }
 
         sessionId
+    }
+
+    private suspend fun fetchSpotifyTracks(): List<SpotifyTrackObject> {
+        if (!spotifyAuthManager.isAuthenticated.value) return emptyList()
+        val token = spotifyAuthManager.getValidAccessToken() ?: return emptyList()
+        val bearer = "Bearer $token"
+
+        val topTracks = runCatching {
+            spotifyWebService.getTopTracks(bearer, limit = 20, timeRange = "short_term")
+        }.getOrNull()?.items
+
+        if (!topTracks.isNullOrEmpty()) return topTracks
+
+        val recent = runCatching {
+            spotifyWebService.getRecentlyPlayed(bearer, limit = 20)
+        }.getOrNull()?.items?.map { it.track }
+
+        return recent?.distinctBy { it.id } ?: emptyList()
+    }
+
+    suspend fun fetchUserProfileName() {
+        val token = spotifyAuthManager.getValidAccessToken() ?: return
+        val profile = runCatching {
+            spotifyWebService.getCurrentProfile("Bearer $token")
+        }.getOrNull()
+        profile?.displayName?.let { spotifyAuthManager.updateDisplayName(it) }
+    }
+
+    private suspend fun tryGeminiReasoning(
+        activity: DetectedActivity,
+        userPrompt: String?,
+        spotifyTracks: List<SpotifyTrackObject>,
+    ) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isBlank()) {
+            appendMessage(
+                "Built a ${spotifyTracks.size.coerceAtMost(10)}-track mix from your Spotify library for ${activity.displayLabel().lowercase()}.",
+                isUser = false,
+            )
+            return
+        }
+
+        val trackList = spotifyTracks.take(10).joinToString("\n") { t ->
+            "- ${t.name} by ${t.artists?.firstOrNull()?.name ?: "Unknown"}"
+        }
+
+        val prompt = buildString {
+            append("You are Pulsify, a friendly music companion app. ")
+            append("The user is currently ${activity.displayLabel().lowercase()}. ")
+            userPrompt?.let { append("They said: \"$it\". ") }
+            append("Their recent top tracks from Spotify:\n$trackList\n\n")
+            append("In 2-3 brief, conversational sentences, explain how this music fits ")
+            append("their current ${activity.displayLabel().lowercase()} context. ")
+            append("Be upbeat and natural.")
+        }
+
+        val result = runCatching {
+            geminiPlaylistService.generatePlaylistSuggestion(
+                apiKey = apiKey,
+                body = GeminiGenerateRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(GeminiContentPart(text = prompt)),
+                            role = "user",
+                        ),
+                    ),
+                ),
+            )
+        }.getOrNull()
+
+        val geminiText = result?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+        if (!geminiText.isNullOrBlank()) {
+            appendMessage(geminiText.trim(), isUser = false)
+        } else {
+            appendMessage(
+                "Here's a mix from your Spotify library, matched to your ${activity.displayLabel().lowercase()} context!",
+                isUser = false,
+            )
+        }
+    }
+
+    private suspend fun tryGeminiGeneric(
+        activity: DetectedActivity,
+        userPrompt: String?,
+        latitude: Double?,
+        longitude: Double?,
+    ) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isBlank()) return
+
+        val prompt = buildString {
+            append("You are Pulsify, a friendly music companion app. ")
+            append("The user is currently ${activity.displayLabel().lowercase()}. ")
+            userPrompt?.let { append("They said: \"$it\". ") }
+            if (latitude != null && longitude != null) {
+                append("Approximate location: $latitude, $longitude. ")
+            }
+            append("In 2-3 brief, conversational sentences, suggest what kind of music ")
+            append("would fit their current activity. Be specific about genres or vibes. ")
+            append("Be upbeat and natural.")
+        }
+
+        val result = runCatching {
+            geminiPlaylistService.generatePlaylistSuggestion(
+                apiKey = apiKey,
+                body = GeminiGenerateRequest(
+                    contents = listOf(
+                        GeminiContent(
+                            parts = listOf(GeminiContentPart(text = prompt)),
+                            role = "user",
+                        ),
+                    ),
+                ),
+            )
+        }.getOrNull()
+
+        val geminiText = result?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+        if (!geminiText.isNullOrBlank()) {
+            appendMessage(geminiText.trim(), isUser = false)
+        }
     }
 
     fun togglePlayPause() {
@@ -152,26 +261,36 @@ class PulsifyRepository(
         _playback.value = p.copy(currentIndex = prev, isPlaying = true)
     }
 
+    private fun SpotifyTrackObject.toDomainTrack(activity: DetectedActivity, index: Int): Track {
+        val estimatedBpm = when (activity) {
+            DetectedActivity.Running -> 155 + (index % 20)
+            DetectedActivity.Walking -> 95 + (index % 20)
+            DetectedActivity.Sitting -> 70 + (index % 15)
+            DetectedActivity.Unknown -> 100 + (index % 20)
+        }
+        val energy = when (activity) {
+            DetectedActivity.Running -> "High energy"
+            DetectedActivity.Walking -> "Mid-tempo"
+            DetectedActivity.Sitting -> "Calm"
+            DetectedActivity.Unknown -> "Balanced"
+        }
+        return Track(
+            id = id,
+            title = name,
+            artist = artists?.firstOrNull()?.name ?: "Unknown",
+            bpm = estimatedBpm,
+            energyLabel = energy,
+        )
+    }
+
     private fun defaultWelcome(): List<ChatMessage> = listOf(
         ChatMessage(
             id = "welcome",
             isUser = false,
-            text = "Hi, I’m Pulsify. I’ll read your movement context and suggest music that fits. " +
-                "Spotify and cloud AI calls are stubbed for now—everything you see is local simulation.",
+            text = "Hi, I'm Pulsify! I read your movement context and suggest music that fits. " +
+                "Connect Spotify in Settings to use your real library, or try a mock mix right away.",
         ),
     )
-
-    private fun buildPrompt(
-        activity: DetectedActivity,
-        userPrompt: String?,
-        lat: Double?,
-        lng: Double?,
-    ): String = buildString {
-        append("Activity: ${activity.name}. ")
-        userPrompt?.let { append("User note: $it. ") }
-        if (lat != null && lng != null) append("Approx location: $lat,$lng. ")
-        append("Return a 10-song playlist idea with tempo and energy matched to the activity.")
-    }
 
     private fun buildAssociationLabel(activity: DetectedActivity, tracks: List<Track>): String {
         val avgBpm = tracks.map { it.bpm }.average().toInt()

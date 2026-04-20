@@ -4,6 +4,7 @@ import android.content.Context
 import com.pulsify.android.data.local.PulsifyDatabase
 import com.pulsify.android.data.location.LocationReader
 import com.pulsify.android.data.remote.NetworkModule
+import com.pulsify.android.data.remote.SpotifyAuthManager
 import com.pulsify.android.data.repository.PulsifyRepository
 import com.pulsify.android.data.sensor.ActivityClassifier
 
@@ -17,9 +18,13 @@ class AppContainer(context: Context) {
 
     val spotifyWebService = NetworkModule.spotifyService()
 
+    val spotifyAuthManager = SpotifyAuthManager(appContext)
+
     val repository = PulsifyRepository(
         dao = database.pulsifyDao(),
         geminiPlaylistService = geminiService,
+        spotifyWebService = spotifyWebService,
+        spotifyAuthManager = spotifyAuthManager,
     )
 
     val locationReader = LocationReader(appContext)
