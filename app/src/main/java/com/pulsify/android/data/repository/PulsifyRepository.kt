@@ -9,6 +9,8 @@ import com.pulsify.android.data.remote.GeminiContentPart
 import com.pulsify.android.data.remote.GeminiGenerateRequest
 import com.pulsify.android.data.remote.GeminiPlaylistService
 import com.pulsify.android.data.remote.SpotifyAuthManager
+import com.pulsify.android.data.remote.SpotifyPlayOffset
+import com.pulsify.android.data.remote.SpotifyPlayRequest
 import com.pulsify.android.data.remote.SpotifyTrackObject
 import com.pulsify.android.data.remote.SpotifyWebService
 import com.pulsify.android.domain.ChatMessage
@@ -241,24 +243,58 @@ class PulsifyRepository(
         }
     }
 
-    fun togglePlayPause() {
+    suspend fun togglePlayPause() = withContext(Dispatchers.IO) {
         val p = _playback.value
-        if (p.tracks.isEmpty()) return
-        _playback.value = p.copy(isPlaying = !p.isPlaying)
+        if (p.tracks.isEmpty()) return@withContext
+
+        if (p.isPlaying) {
+            spotifyPause()
+            _playback.value = p.copy(isPlaying = false)
+        } else {
+            val track = p.currentTrack
+            if (track?.spotifyUri != null) {
+                spotifyPlay(p.tracks, p.currentIndex)
+            }
+            _playback.value = p.copy(isPlaying = true)
+        }
     }
 
-    fun skipNext() {
+    suspend fun skipNext() = withContext(Dispatchers.IO) {
         val p = _playback.value
-        if (p.tracks.isEmpty()) return
+        if (p.tracks.isEmpty()) return@withContext
         val next = (p.currentIndex + 1).coerceAtMost(p.tracks.lastIndex)
         _playback.value = p.copy(currentIndex = next, isPlaying = true)
+        spotifyPlay(p.tracks, next)
     }
 
-    fun skipPrevious() {
+    suspend fun skipPrevious() = withContext(Dispatchers.IO) {
         val p = _playback.value
-        if (p.tracks.isEmpty()) return
+        if (p.tracks.isEmpty()) return@withContext
         val prev = (p.currentIndex - 1).coerceAtLeast(0)
         _playback.value = p.copy(currentIndex = prev, isPlaying = true)
+        spotifyPlay(p.tracks, prev)
+    }
+
+    private suspend fun spotifyPlay(tracks: List<Track>, index: Int) {
+        val token = spotifyAuthManager.getValidAccessToken() ?: return
+        val bearer = "Bearer $token"
+        val uris = tracks.mapNotNull { it.spotifyUri }
+        if (uris.isEmpty()) return
+
+        runCatching {
+            spotifyWebService.startPlayback(
+                auth = bearer,
+                body = SpotifyPlayRequest(
+                    uris = uris,
+                    offset = SpotifyPlayOffset(position = index),
+                ),
+            )
+        }
+    }
+
+    private suspend fun spotifyPause() {
+        val token = spotifyAuthManager.getValidAccessToken() ?: return
+        runCatching { spotifyWebService.pausePlayback("Bearer $token") }
     }
 
     private fun SpotifyTrackObject.toDomainTrack(activity: DetectedActivity, index: Int): Track {
@@ -280,6 +316,7 @@ class PulsifyRepository(
             artist = artists?.firstOrNull()?.name ?: "Unknown",
             bpm = estimatedBpm,
             energyLabel = energy,
+            spotifyUri = uri,
         )
     }
 

@@ -1,19 +1,29 @@
-# Pulsify (CS501E project)
+# Pulsify
 
-**Pulsify** is an Android app (Jetpack Compose) that explores context-aware music companionship: the phone's accelerometer detects movement (sitting, walking, running), real Spotify integration pulls the user's listening history, and Google Gemini AI explains how the music fits the current activity context. Sessions are persisted locally with Room and optionally tagged with location data via Google Maps.
+Context-aware music companion for Android (Jetpack Compose).
 
-## Responsible use of AI (Course disclosure)
+## Setup
 
-Generative AI tools were used as a **supporting assistant** while building this milestone: mainly to speed up boilerplate, suggest structure, and double-check patterns (for example, Gradle setup, navigation, and common Android APIs). **Design decisions, product direction, and what actually ships in the repo were reviewed and owned by the team.** Where suggestions looked wrong or over-scoped, they were revised or discarded. This README stays high level on purpose; course reflections may add more detail where required.
+Copy `local.properties.example` values into `local.properties` at the project root:
 
-## Team progress and collaboration
+```properties
+sdk.dir=/path/to/Android/sdk
+MAPS_API_KEY=<Google Maps API key>
+SPOTIFY_CLIENT_ID=<Spotify Developer Dashboard client ID>
+SPOTIFY_CLIENT_SECRET=<Spotify Developer Dashboard client secret>
+GEMINI_API_KEY=<Google AI Studio API key>
+```
 
-**David Kaplansky** and **Parthiv Krishnan** have been working on this project **together from the start of this milestone**, planning features, walking through the architecture, and debugging on a shared machine.
+Spotify redirect URI must be set to `com.pulsify.android://callback` in the Spotify Developer Dashboard.
 
-**Important:** We did most of our work **pair programming on David’s computer**. Because of that, **Git commit history shows David as the author**, even though **both teammates were actively involved for essentially the whole time**. Parthiv’s contributions are reflected in the work itself (UI flow, architecture, integration pieces), not as separate commits under his GitHub account.
+## Responsible use of AI
 
-Our **Project Update 1 demonstration outline** (flow, timing, and planned talking points) is in **`PRESENTATION.md`**.
+Generative AI tools were used as a supporting assistant while building this project — mainly for boilerplate, structure suggestions, and common Android API patterns. Design decisions and product direction were reviewed and owned by the team. Suggestions that were wrong or over-scoped were revised or discarded.
+
+## Team
+
+**David Kaplansky** and **Parthiv Krishnan** — pair programmed on David's machine, which is why Git history shows a single author. Both teammates contributed throughout.
 
 ---
 
-Course: CS501E · Project update milestone
+CS501E

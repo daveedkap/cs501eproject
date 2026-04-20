@@ -6,6 +6,7 @@ import com.pulsify.android.data.repository.PulsifyRepository
 import com.pulsify.android.domain.PlaybackUiState
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class PlaylistViewModel(
     private val repository: PulsifyRepository,
@@ -17,9 +18,15 @@ class PlaylistViewModel(
         PlaybackUiState(isPlaying = false, currentIndex = 0, tracks = emptyList()),
     )
 
-    fun togglePlayPause() = repository.togglePlayPause()
+    fun togglePlayPause() {
+        viewModelScope.launch { repository.togglePlayPause() }
+    }
 
-    fun skipNext() = repository.skipNext()
+    fun skipNext() {
+        viewModelScope.launch { repository.skipNext() }
+    }
 
-    fun skipPrevious() = repository.skipPrevious()
+    fun skipPrevious() {
+        viewModelScope.launch { repository.skipPrevious() }
+    }
 }

@@ -170,6 +170,6 @@ class SpotifyAuthManager(context: Context) {
         private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_EXPIRES_AT = "expires_at"
         private const val KEY_DISPLAY_NAME = "display_name"
-        private const val SCOPES = "user-read-recently-played user-top-read"
+        private const val SCOPES = "user-read-recently-played user-top-read user-modify-playback-state user-read-playback-state"
     }
 }

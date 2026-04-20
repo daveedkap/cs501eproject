@@ -26,6 +26,7 @@ data class Track(
     val artist: String,
     val bpm: Int,
     val energyLabel: String,
+    val spotifyUri: String? = null,
 )
 
 data class PlaybackUiState(
