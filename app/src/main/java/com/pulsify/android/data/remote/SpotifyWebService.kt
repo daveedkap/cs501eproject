@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Query
@@ -31,8 +32,14 @@ interface SpotifyWebService {
     @GET("v1/audio-features")
     suspend fun getAudioFeatures(
         @Header("Authorization") auth: String,
-        @Query("ids") ids: String,
+        @Query(value = "ids", encoded = true) ids: String,
     ): SpotifyAudioFeaturesResponse
+
+    @GET("v1/audio-features/{id}")
+    suspend fun getAudioFeature(
+        @Header("Authorization") auth: String,
+        @Path("id") id: String,
+    ): SpotifyAudioFeature
 
     @GET("v1/search")
     suspend fun searchTracks(

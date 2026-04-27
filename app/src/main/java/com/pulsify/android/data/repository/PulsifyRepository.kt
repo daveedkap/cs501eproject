@@ -146,23 +146,48 @@ class PulsifyRepository(
     private suspend fun fetchTrackTempos(tracks: List<SpotifyTrackObject>): Map<String, Int> {
         if (!spotifyAuthManager.isAuthenticated.value) return emptyMap()
         val token = spotifyAuthManager.getValidAccessToken() ?: return emptyMap()
-        val ids = tracks.map { it.id }.distinct().take(100)
+        val ids = tracks
+            .asSequence()
+            .map { it.id.trim() }
+            .filter { it.matches(Regex("^[A-Za-z0-9]{22}$")) }
+            .distinct()
+            .take(100)
+            .toList()
         if (ids.isEmpty()) return emptyMap()
 
-        val response = runCatching {
+        val batchTempos = runCatching {
             spotifyWebService.getAudioFeatures(
                 auth = "Bearer $token",
                 ids = ids.joinToString(","),
             )
-        }.getOrNull() ?: return emptyMap()
+        }.getOrNull()
 
-        return response.audioFeatures.orEmpty()
+        val tempos = batchTempos?.audioFeatures.orEmpty()
             .mapNotNull { feature ->
                 val id = feature?.id
                 val bpm = feature?.tempo?.toInt()
                 if (id.isNullOrBlank() || bpm == null || bpm <= 0) null else id to bpm
             }
             .toMap()
+            .toMutableMap()
+
+        // Fallback: recover tempos for any IDs missing from batch response.
+        ids.asSequence()
+            .filterNot { tempos.containsKey(it) }
+            .forEach { id ->
+                val fallbackBpm = runCatching {
+                    spotifyWebService.getAudioFeature(
+                        auth = "Bearer $token",
+                        id = id,
+                    ).tempo?.toInt()
+                }.getOrNull()
+
+                if (fallbackBpm != null && fallbackBpm > 0) {
+                    tempos[id] = fallbackBpm
+                }
+            }
+
+        return tempos
     }
 
     suspend fun fetchUserProfileName() {
