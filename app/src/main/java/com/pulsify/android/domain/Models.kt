@@ -24,7 +24,7 @@ data class Track(
     val id: String,
     val title: String,
     val artist: String,
-    val bpm: Int,
+    val bpm: Int?,
     val energyLabel: String,
     val spotifyUri: String? = null,
 )

@@ -106,7 +106,8 @@ private fun NowPlayingCard(track: Track, isPlaying: Boolean) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(track.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(track.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Text("${track.bpm} BPM · ${track.energyLabel}", style = MaterialTheme.typography.bodyMedium)
+            val bpmLabel = track.bpm?.let { "$it BPM" } ?: "BPM unavailable"
+            Text("$bpmLabel · ${track.energyLabel}", style = MaterialTheme.typography.bodyMedium)
             Text(if (isPlaying) "Playing" else "Paused", style = MaterialTheme.typography.labelLarge)
         }
     }
@@ -122,7 +123,8 @@ private fun TrackRow(track: Track, active: Boolean) {
     Card(colors = colors) {
         Column(Modifier.padding(12.dp)) {
             Text(track.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${track.artist} · ${track.bpm} BPM", style = MaterialTheme.typography.bodySmall)
+            val bpmLabel = track.bpm?.let { "$it BPM" } ?: "BPM unavailable"
+            Text("${track.artist} · $bpmLabel", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

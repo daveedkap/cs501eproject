@@ -24,6 +24,15 @@ data class SpotifyTrackObject(
     @Json(name = "uri") val uri: String? = null,
 )
 
+data class SpotifyAudioFeature(
+    @Json(name = "id") val id: String?,
+    @Json(name = "tempo") val tempo: Double? = null,
+)
+
+data class SpotifyAudioFeaturesResponse(
+    @Json(name = "audio_features") val audioFeatures: List<SpotifyAudioFeature?>? = null,
+)
+
 data class SpotifyUserProfile(
     @Json(name = "id") val id: String?,
     @Json(name = "display_name") val displayName: String?,

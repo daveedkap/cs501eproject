@@ -74,8 +74,9 @@ class PulsifyRepository(
         val tracks: List<Track>
 
         if (spotifyTracks.isNotEmpty()) {
-            tracks = spotifyTracks.take(10).mapIndexed { i, st ->
-                st.toDomainTrack(activity, i)
+            val temposByTrackId = fetchTrackTempos(spotifyTracks)
+            tracks = spotifyTracks.take(10).map { st ->
+                st.toDomainTrack(activity, temposByTrackId[st.id])
             }
             tryGeminiReasoning(activity, userPrompt, spotifyTracks)
         } else {
@@ -89,9 +90,10 @@ class PulsifyRepository(
             tracks = tracks,
         )
 
-        val avgBpm = tracks.map { it.bpm }.average().toInt()
+        val avgBpm = tracks.mapNotNull { it.bpm }.average().toInt()
+        val avgBpmLabel = if (avgBpm > 0) "~${avgBpm} BPM avg" else "BPM unavailable"
         val moods = tracks.map { it.energyLabel }.distinct().take(3).joinToString(", ")
-        val summary = "${tracks.size} tracks · ${activity.displayLabel()} · ~${avgBpm} BPM avg · $moods"
+        val summary = "${tracks.size} tracks · ${activity.displayLabel()} · $avgBpmLabel · $moods"
 
         val sessionId = dao.insertSession(
             ActivitySessionEntity(
@@ -139,6 +141,28 @@ class PulsifyRepository(
         }.getOrNull()?.items?.map { it.track }
 
         return recent?.distinctBy { it.id } ?: emptyList()
+    }
+
+    private suspend fun fetchTrackTempos(tracks: List<SpotifyTrackObject>): Map<String, Int> {
+        if (!spotifyAuthManager.isAuthenticated.value) return emptyMap()
+        val token = spotifyAuthManager.getValidAccessToken() ?: return emptyMap()
+        val ids = tracks.map { it.id }.distinct().take(100)
+        if (ids.isEmpty()) return emptyMap()
+
+        val response = runCatching {
+            spotifyWebService.getAudioFeatures(
+                auth = "Bearer $token",
+                ids = ids.joinToString(","),
+            )
+        }.getOrNull() ?: return emptyMap()
+
+        return response.audioFeatures.orEmpty()
+            .mapNotNull { feature ->
+                val id = feature?.id
+                val bpm = feature?.tempo?.toInt()
+                if (id.isNullOrBlank() || bpm == null || bpm <= 0) null else id to bpm
+            }
+            .toMap()
     }
 
     suspend fun fetchUserProfileName() {
@@ -297,13 +321,10 @@ class PulsifyRepository(
         runCatching { spotifyWebService.pausePlayback("Bearer $token") }
     }
 
-    private fun SpotifyTrackObject.toDomainTrack(activity: DetectedActivity, index: Int): Track {
-        val estimatedBpm = when (activity) {
-            DetectedActivity.Running -> 155 + (index % 20)
-            DetectedActivity.Walking -> 95 + (index % 20)
-            DetectedActivity.Sitting -> 70 + (index % 15)
-            DetectedActivity.Unknown -> 100 + (index % 20)
-        }
+    private fun SpotifyTrackObject.toDomainTrack(
+        activity: DetectedActivity,
+        bpm: Int?,
+    ): Track {
         val energy = when (activity) {
             DetectedActivity.Running -> "High energy"
             DetectedActivity.Walking -> "Mid-tempo"
@@ -314,7 +335,7 @@ class PulsifyRepository(
             id = id,
             title = name,
             artist = artists?.firstOrNull()?.name ?: "Unknown",
-            bpm = estimatedBpm,
+            bpm = bpm,
             energyLabel = energy,
             spotifyUri = uri,
         )
@@ -330,13 +351,14 @@ class PulsifyRepository(
     )
 
     private fun buildAssociationLabel(activity: DetectedActivity, tracks: List<Track>): String {
-        val avgBpm = tracks.map { it.bpm }.average().toInt()
+        val avgBpm = tracks.mapNotNull { it.bpm }.average().toInt()
+        val avgBpmLabel = if (avgBpm > 0) "avg $avgBpm BPM" else "BPM unavailable"
         val topMoods = tracks.map { it.energyLabel }.distinct().shuffled().take(2).joinToString(" / ")
         return when (activity) {
-            DetectedActivity.Running -> "High-energy, $topMoods — avg $avgBpm BPM for runs"
-            DetectedActivity.Walking -> "Mid-tempo, $topMoods — avg $avgBpm BPM for walks"
-            DetectedActivity.Sitting -> "Lo-fi & calm, $topMoods — avg $avgBpm BPM for focus"
-            DetectedActivity.Unknown -> "Mixed mood, $topMoods — avg $avgBpm BPM"
+            DetectedActivity.Running -> "High-energy, $topMoods — $avgBpmLabel for runs"
+            DetectedActivity.Walking -> "Mid-tempo, $topMoods — $avgBpmLabel for walks"
+            DetectedActivity.Sitting -> "Lo-fi & calm, $topMoods — $avgBpmLabel for focus"
+            DetectedActivity.Unknown -> "Mixed mood, $topMoods — $avgBpmLabel"
         }
     }
 

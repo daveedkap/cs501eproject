@@ -28,6 +28,12 @@ interface SpotifyWebService {
         @Query("time_range") timeRange: String = "short_term",
     ): SpotifyTopTracksResponse
 
+    @GET("v1/audio-features")
+    suspend fun getAudioFeatures(
+        @Header("Authorization") auth: String,
+        @Query("ids") ids: String,
+    ): SpotifyAudioFeaturesResponse
+
     @GET("v1/search")
     suspend fun searchTracks(
         @Header("Authorization") auth: String,
