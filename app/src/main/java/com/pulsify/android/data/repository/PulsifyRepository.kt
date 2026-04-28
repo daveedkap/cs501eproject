@@ -146,13 +146,11 @@ class PulsifyRepository(
         spotifyTracks: List<SpotifyTrackObject>,
         activity: DetectedActivity,
     ): List<SpotifyTrackObject> {
-        // Use up to 30 distinct tracks, shuffle once, then split into 3 non-overlapping groups.
         val basePool = spotifyTracks
             .distinctBy { it.id }
             .take(30)
         if (basePool.isEmpty()) return emptyList()
 
-        // Stable shuffle from current pool so each activity consistently maps to a different slice.
         val stableSeed = basePool.joinToString("|") { it.id }.hashCode()
         val shuffled = basePool.shuffled(Random(stableSeed))
         val slices = shuffled.chunked(10)
