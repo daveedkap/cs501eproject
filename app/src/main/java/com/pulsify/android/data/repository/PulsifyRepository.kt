@@ -74,10 +74,11 @@ class PulsifyRepository(
         val tracks: List<Track>
 
         if (spotifyTracks.isNotEmpty()) {
-            tracks = spotifyTracks.take(10).mapIndexed { i, st ->
+            val activityTracks = selectTracksForActivity(spotifyTracks, activity)
+            tracks = activityTracks.mapIndexed { i, st ->
                 st.toDomainTrack(activity, i)
             }
-            tryGeminiReasoning(activity, userPrompt, spotifyTracks)
+            tryGeminiReasoning(activity, userPrompt, activityTracks)
         } else {
             tracks = mockTracksFor(activity)
             tryGeminiGeneric(activity, userPrompt, latitude, longitude)
@@ -129,7 +130,7 @@ class PulsifyRepository(
         val bearer = "Bearer $token"
 
         val topTracks = runCatching {
-            spotifyWebService.getTopTracks(bearer, limit = 20, timeRange = "short_term")
+            spotifyWebService.getTopTracks(bearer, limit = 50, timeRange = "medium_term")
         }.getOrNull()?.items
 
         if (!topTracks.isNullOrEmpty()) return topTracks
@@ -139,6 +140,29 @@ class PulsifyRepository(
         }.getOrNull()?.items?.map { it.track }
 
         return recent?.distinctBy { it.id } ?: emptyList()
+    }
+
+    private fun selectTracksForActivity(
+        spotifyTracks: List<SpotifyTrackObject>,
+        activity: DetectedActivity,
+    ): List<SpotifyTrackObject> {
+        // Use up to 30 distinct tracks, shuffle once, then split into 3 non-overlapping groups.
+        val basePool = spotifyTracks
+            .distinctBy { it.id }
+            .take(30)
+        if (basePool.isEmpty()) return emptyList()
+
+        // Stable shuffle from current pool so each activity consistently maps to a different slice.
+        val stableSeed = basePool.joinToString("|") { it.id }.hashCode()
+        val shuffled = basePool.shuffled(Random(stableSeed))
+        val slices = shuffled.chunked(10)
+
+        return when (activity) {
+            DetectedActivity.Sitting -> slices.getOrNull(0).orEmpty()
+            DetectedActivity.Walking -> slices.getOrNull(1).orEmpty().ifEmpty { slices.flatten().take(10) }
+            DetectedActivity.Running -> slices.getOrNull(2).orEmpty().ifEmpty { slices.flatten().takeLast(10) }
+            DetectedActivity.Unknown -> slices.firstOrNull().orEmpty()
+        }.ifEmpty { shuffled.take(10) }
     }
 
     suspend fun fetchUserProfileName() {
