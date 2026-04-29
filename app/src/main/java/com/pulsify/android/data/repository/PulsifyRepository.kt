@@ -265,6 +265,40 @@ class PulsifyRepository(
         }
     }
 
+    suspend fun removeTrack(trackId: String) = withContext(Dispatchers.IO) {
+        val p = _playback.value
+        val idx = p.tracks.indexOfFirst { it.id == trackId }
+        if (idx < 0) return@withContext
+
+        val newTracks = p.tracks.toMutableList().apply { removeAt(idx) }
+        if (newTracks.isEmpty()) {
+            spotifyPause()
+            _playback.value = PlaybackUiState(
+                isPlaying = false,
+                currentIndex = 0,
+                tracks = emptyList(),
+            )
+            return@withContext
+        }
+
+        val wasPlayingRemoved = idx == p.currentIndex
+        val newIndex = when {
+            idx < p.currentIndex -> p.currentIndex - 1
+            idx == p.currentIndex -> p.currentIndex.coerceAtMost(newTracks.lastIndex)
+            else -> p.currentIndex
+        }.coerceIn(0, newTracks.lastIndex)
+
+        _playback.value = p.copy(
+            tracks = newTracks,
+            currentIndex = newIndex,
+            isPlaying = if (wasPlayingRemoved) false else p.isPlaying,
+        )
+
+        if (wasPlayingRemoved) {
+            spotifyPause()
+        }
+    }
+
     suspend fun togglePlayPause() = withContext(Dispatchers.IO) {
         val p = _playback.value
         if (p.tracks.isEmpty()) return@withContext

@@ -29,4 +29,8 @@ class PlaylistViewModel(
     fun skipPrevious() {
         viewModelScope.launch { repository.skipPrevious() }
     }
+
+    fun removeTrack(trackId: String) {
+        viewModelScope.launch { repository.removeTrack(trackId) }
+    }
 }
