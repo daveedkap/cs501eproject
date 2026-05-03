@@ -18,10 +18,11 @@ import com.pulsify.android.domain.DetectedActivity
 import com.pulsify.android.domain.PlaybackUiState
 import com.pulsify.android.domain.Track
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
@@ -44,6 +45,17 @@ class PulsifyRepository(
 
     val spotifyLinked: StateFlow<Boolean> = spotifyAuthManager.isAuthenticated
 
+    private val catalogMutex = Mutex()
+
+    /**
+     * Session-scoped top tracks with fictional BPM (Spotify Audio Features replacement).
+     * Null means not loaded yet; empty means loaded but no tracks available.
+     */
+    private var sessionCatalog: List<CatalogEntry>? = null
+
+    /** Last playlist (by track id set) per activity to avoid identical back-to-back draws. */
+    private val lastPlaylistIdsByActivity = mutableMapOf<DetectedActivity, Set<String>>()
+
     private val _textModePreferred = MutableStateFlow(false)
     val textModePreferred = _textModePreferred.asStateFlow()
 
@@ -64,24 +76,76 @@ class PulsifyRepository(
         _messages.value = defaultWelcome()
     }
 
+    /**
+     * Clears session top-track catalog and shuffle history (call on Spotify disconnect).
+     */
+    fun clearSpotifySessionCatalog() {
+        sessionCatalog = null
+        lastPlaylistIdsByActivity.clear()
+    }
+
+    /**
+     * Loads top tracks once per session and assigns fictional BPM buckets (for app load / warm-up).
+     */
+    suspend fun prefetchSessionCatalogIfLinked() = withContext(Dispatchers.IO) {
+        if (!spotifyAuthManager.isAuthenticated.value) return@withContext
+        ensureSessionCatalogLoaded()
+    }
+
+    /**
+     * After voice input: reshuffle 10 tracks from the activity bucket so the mix visibly changes.
+     */
+    suspend fun refreshPlaylistAfterVoice(
+        activity: DetectedActivity,
+        voiceText: String?,
+    ) = withContext(Dispatchers.IO) {
+        if (!spotifyAuthManager.isAuthenticated.value) return@withContext
+        ensureSessionCatalogLoaded()
+        val catalog = sessionCatalog
+        if (catalog.isNullOrEmpty()) return@withContext
+
+        val selected = selectCatalogEntriesForActivity(catalog, activity)
+        if (selected.isEmpty()) return@withContext
+        val spotifyOnly = selected.map { it.track }
+        val tracks = selected.map { entry ->
+            entry.track.toDomainTrack(entry.fictionalBpm)
+        }
+
+        _playback.value = PlaybackUiState(
+            isPlaying = false,
+            currentIndex = 0,
+            tracks = tracks,
+        )
+
+        tryGeminiReasoning(activity, voiceText, spotifyOnly)
+        appendMessage(
+            "Adjusted your mix from what you said — here's a fresh ${tracks.size}-track pull for ${activity.displayLabel().lowercase()}.",
+            isUser = false,
+        )
+    }
+
     suspend fun requestPlaylistForActivity(
         activity: DetectedActivity,
         userPrompt: String?,
         latitude: Double?,
         longitude: Double?,
     ): Long = withContext(Dispatchers.IO) {
-        val spotifyTracks = fetchSpotifyTracks()
-        val tracks: List<Track>
-
-        if (spotifyTracks.isNotEmpty()) {
-            val activityTracks = selectTracksForActivity(spotifyTracks, activity)
-            tracks = activityTracks.mapIndexed { i, st ->
-                st.toDomainTrack(activity, i)
+        ensureSessionCatalogLoaded()
+        val catalog = sessionCatalog
+        val (tracks, fromSpotifyCatalog) = if (!catalog.isNullOrEmpty()) {
+            val selected = selectCatalogEntriesForActivity(catalog, activity)
+            if (selected.isNotEmpty()) {
+                tryGeminiReasoning(activity, userPrompt, selected.map { it.track })
+                selected.map { entry ->
+                    entry.track.toDomainTrack(entry.fictionalBpm)
+                } to true
+            } else {
+                tryGeminiGeneric(activity, userPrompt, latitude, longitude)
+                mockTracksFor(activity) to false
             }
-            tryGeminiReasoning(activity, userPrompt, activityTracks)
         } else {
-            tracks = mockTracksFor(activity)
             tryGeminiGeneric(activity, userPrompt, latitude, longitude)
+            mockTracksFor(activity) to false
         }
 
         _playback.value = PlaybackUiState(
@@ -113,7 +177,7 @@ class PulsifyRepository(
             ),
         )
 
-        if (spotifyTracks.isEmpty()) {
+        if (!fromSpotifyCatalog) {
             appendMessage(
                 "Here's a ${tracks.size}-track mix tuned for ${activity.displayLabel().lowercase()}. " +
                     "Connect Spotify in Settings for real music from your library!",
@@ -124,43 +188,92 @@ class PulsifyRepository(
         sessionId
     }
 
-    private suspend fun fetchSpotifyTracks(): List<SpotifyTrackObject> {
-        if (!spotifyAuthManager.isAuthenticated.value) return emptyList()
-        val token = spotifyAuthManager.getValidAccessToken() ?: return emptyList()
-        val bearer = "Bearer $token"
+    private suspend fun ensureSessionCatalogLoaded() {
+        catalogMutex.withLock {
+            if (sessionCatalog != null) return@withLock
+            if (!spotifyAuthManager.isAuthenticated.value) return@withLock
 
+            val token = spotifyAuthManager.getValidAccessToken() ?: return@withLock
+            val bearer = "Bearer $token"
+
+            val orderedTracks = fetchOrderedTopTracksForCatalog(bearer)
+            sessionCatalog = if (orderedTracks.isEmpty()) {
+                emptyList()
+            } else {
+                buildCatalogEntries(orderedTracks)
+            }
+        }
+    }
+
+    private suspend fun fetchOrderedTopTracksForCatalog(bearer: String): List<SpotifyTrackObject> {
         val topTracks = runCatching {
             spotifyWebService.getTopTracks(bearer, limit = 50, timeRange = "medium_term")
         }.getOrNull()?.items
+            ?.filterNotNull()
+            ?.distinctBy { it.id }
+            ?.take(50)
+            .orEmpty()
 
-        if (!topTracks.isNullOrEmpty()) return topTracks
+        if (topTracks.isNotEmpty()) return topTracks
 
-        val recent = runCatching {
-            spotifyWebService.getRecentlyPlayed(bearer, limit = 20)
-        }.getOrNull()?.items?.map { it.track }
-
-        return recent?.distinctBy { it.id } ?: emptyList()
+        return runCatching {
+            spotifyWebService.getRecentlyPlayed(bearer, limit = 50)
+        }.getOrNull()?.items
+            ?.mapNotNull { it.track }
+            ?.distinctBy { it.id }
+            ?.take(50)
+            .orEmpty()
     }
 
-    private fun selectTracksForActivity(
-        spotifyTracks: List<SpotifyTrackObject>,
+    private fun buildCatalogEntries(tracks: List<SpotifyTrackObject>): List<CatalogEntry> {
+        val rng = Random(System.nanoTime())
+        return tracks.take(50).mapIndexed { index, track ->
+            val bpm = when (index) {
+                in 0..16 -> rng.nextInt(70, 95)
+                in 17..33 -> rng.nextInt(95, 119)
+                else -> rng.nextInt(119, 143)
+            }
+            CatalogEntry(track = track, fictionalBpm = bpm, topRankIndex = index)
+        }
+    }
+
+    private fun bucketPoolForActivity(
+        catalog: List<CatalogEntry>,
         activity: DetectedActivity,
-    ): List<SpotifyTrackObject> {
-        val basePool = spotifyTracks
-            .distinctBy { it.id }
-            .take(30)
-        if (basePool.isEmpty()) return emptyList()
+    ): List<CatalogEntry> = when (activity) {
+        DetectedActivity.Sitting -> catalog.filter { it.topRankIndex in 0..16 }
+        DetectedActivity.Walking -> catalog.filter { it.topRankIndex in 17..33 }
+        DetectedActivity.Running -> catalog.filter { it.topRankIndex in 34..49 }
+        DetectedActivity.Unknown ->
+            catalog.filter { it.topRankIndex in 17..33 }
+                .ifEmpty { catalog.filter { it.topRankIndex in 0..16 } }
+                .ifEmpty { catalog.filter { it.topRankIndex in 34..49 } }
+                .ifEmpty { catalog }
+    }
 
-        val stableSeed = basePool.joinToString("|") { it.id }.hashCode()
-        val shuffled = basePool.shuffled(Random(stableSeed))
-        val slices = shuffled.chunked(10)
+    private fun selectCatalogEntriesForActivity(
+        catalog: List<CatalogEntry>,
+        activity: DetectedActivity,
+    ): List<CatalogEntry> {
+        val pool = bucketPoolForActivity(catalog, activity)
+        if (pool.isEmpty()) return emptyList()
 
-        return when (activity) {
-            DetectedActivity.Sitting -> slices.getOrNull(0).orEmpty()
-            DetectedActivity.Walking -> slices.getOrNull(1).orEmpty().ifEmpty { slices.flatten().take(10) }
-            DetectedActivity.Running -> slices.getOrNull(2).orEmpty().ifEmpty { slices.flatten().takeLast(10) }
-            DetectedActivity.Unknown -> slices.firstOrNull().orEmpty()
-        }.ifEmpty { shuffled.take(10) }
+        val takeCount = 10.coerceAtMost(pool.size)
+        val avoidIds = lastPlaylistIdsByActivity[activity]
+        val rng = Random.Default
+
+        repeat(24) {
+            val choice = pool.shuffled(rng).take(takeCount)
+            val ids = choice.map { it.track.id }.toSet()
+            if (avoidIds == null || ids != avoidIds) {
+                lastPlaylistIdsByActivity[activity] = ids
+                return choice
+            }
+        }
+
+        val fallback = pool.shuffled(Random(System.nanoTime())).take(takeCount)
+        lastPlaylistIdsByActivity[activity] = fallback.map { it.track.id }.toSet()
+        return fallback
     }
 
     suspend fun fetchUserProfileName() {
@@ -353,24 +466,17 @@ class PulsifyRepository(
         runCatching { spotifyWebService.pausePlayback("Bearer $token") }
     }
 
-    private fun SpotifyTrackObject.toDomainTrack(activity: DetectedActivity, index: Int): Track {
-        val estimatedBpm = when (activity) {
-            DetectedActivity.Running -> 155 + (index % 20)
-            DetectedActivity.Walking -> 95 + (index % 20)
-            DetectedActivity.Sitting -> 70 + (index % 15)
-            DetectedActivity.Unknown -> 100 + (index % 20)
-        }
-        val energy = when (activity) {
-            DetectedActivity.Running -> "High energy"
-            DetectedActivity.Walking -> "Mid-tempo"
-            DetectedActivity.Sitting -> "Calm"
-            DetectedActivity.Unknown -> "Balanced"
+    private fun SpotifyTrackObject.toDomainTrack(fictionalBpm: Int): Track {
+        val energy = when {
+            fictionalBpm <= 94 -> "Calm"
+            fictionalBpm <= 118 -> "Mid-tempo"
+            else -> "High energy"
         }
         return Track(
             id = id,
             title = name,
             artist = artists?.firstOrNull()?.name ?: "Unknown",
-            bpm = estimatedBpm,
+            bpm = fictionalBpm,
             energyLabel = energy,
             spotifyUri = uri,
         )
@@ -453,3 +559,10 @@ class PulsifyRepository(
         )
     }
 }
+
+private data class CatalogEntry(
+    val track: SpotifyTrackObject,
+    val fictionalBpm: Int,
+    /** 0-based rank in the user's top (or fallback) list; defines slow / medium / fast bucket membership. */
+    val topRankIndex: Int,
+)

@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
             val success = authManager.handleCallback(uri)
             if (success) {
                 repository.fetchUserProfileName()
+                repository.prefetchSessionCatalogIfLinked()
             }
         }
     }

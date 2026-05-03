@@ -32,7 +32,10 @@ class SettingsViewModel(
 
     fun buildSpotifyAuthUrl(): String = spotifyAuthManager.buildAuthUrl()
 
-    fun disconnectSpotify() = spotifyAuthManager.logout()
+    fun disconnectSpotify() {
+        spotifyAuthManager.logout()
+        repository.clearSpotifySessionCatalog()
+    }
 
     fun setTextMode(value: Boolean) = repository.setTextModePreferred(value)
 
