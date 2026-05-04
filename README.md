@@ -11,8 +11,6 @@ A context-aware music companion for Android, built with Jetpack Compose. Pulsify
 
 Pulsify is a single-activity Compose app. The user sees a home “assistant” surface driven by detected activity, optional voice or text input, and a primary action to generate a contextual mix. When Spotify is linked, the app loads the user’s **top tracks** (and falls back to **recently played** if needed), applies an **MVP bucketing strategy** that does **not** use Spotify’s deprecated Audio Features API, and randomly draws a 10-track subset per activity bucket so repeated “Generate” actions do not always return the same order. Voice input triggers an additional reshuffle from the same bucket so the playlist visibly updates. When Spotify is unavailable, the app uses built-in mock tracks and still calls Gemini for generic activity copy where configured.
 
-Deliverables for the course include this repository, **final presentation slides** (see `docs/presentation/README.md`), and this report-style README. **Sections 8 and 9 below are reserved for you to complete by hand** (team contributions and AI reflection).
-
 ---
 
 ## 2. Architecture
