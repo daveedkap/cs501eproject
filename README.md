@@ -232,4 +232,8 @@ We did a lot of pair programming at the beginning of this project, helping us bu
 
 ---
 
+## 10. Final Presentation Link
+
+[Final presentation](https://docs.google.com/presentation/d/12P45zprH_PN8M80EbWcQCKcjZ8gpRUP4OAyN8CpYwvU/edit?usp=sharing)
+
 CS-501 E1 — Spring 2026
