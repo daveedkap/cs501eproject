@@ -56,6 +56,9 @@ class HomeViewModel(
         accelerometer?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
         }
+        viewModelScope.launch {
+            repository.prefetchSessionCatalogIfLinked()
+        }
     }
 
     override fun onCleared() {
@@ -198,7 +201,6 @@ class HomeViewModel(
         _partialText.value = ""
     }
 
-    @Suppress("UNUSED_PARAMETER")
     private fun respondToVoiceInput(userText: String) {
         val activity = _detectedActivity.value
         val response = when (activity) {
@@ -212,6 +214,9 @@ class HomeViewModel(
                 "Still reading your context — I'll pick a balanced playlist."
         }
         repository.appendMessage(response, isUser = false)
+        viewModelScope.launch {
+            repository.refreshPlaylistAfterVoice(activity, userText)
+        }
     }
 
     fun requestPlaylist(onDone: () -> Unit) {
